@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Human vs AI debate platform for legal argumentation",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
