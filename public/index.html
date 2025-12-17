@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Argue Against the Machine</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <h1>Argue Against the Machine</h1>
+      <p class="tagline">Human vs AI Legal Debate</p>
+    </header>
+
+    <!-- Screen: Welcome -->
+    <section id="welcome-screen" class="screen active">
+      <div class="welcome-content">
+        <div class="logo-icon">&#9878;</div>
+        <h2>Welcome to the Courtroom</h2>
+        <p>Test your legal argumentation skills against an AI opponent. An impartial AI judge will evaluate your debate and provide feedback to sharpen your "thinking like a lawyer" abilities.</p>
+        <div class="rules">
+          <h3>How It Works</h3>
+          <ol>
+            <li>Choose a legal dilemma</li>
+            <li>Pick your side: Prosecution or Defense</li>
+            <li>Argue your case over 3 rounds</li>
+            <li>Receive a verdict and detailed feedback</li>
+          </ol>
+        </div>
+        <button id="start-btn" class="btn btn-primary">Select a Case</button>
+      </div>
+    </section>
+
+    <!-- Screen: Case Selection -->
+    <section id="case-screen" class="screen">
+      <h2>Select Your Case</h2>
+      <div id="cases-list" class="cases-grid">
+        <!-- Cases will be loaded here -->
+      </div>
+    </section>
+
+    <!-- Screen: Side Selection -->
+    <section id="side-screen" class="screen">
+      <h2>Choose Your Side</h2>
+      <div id="case-preview" class="case-preview">
+        <!-- Selected case info will appear here -->
+      </div>
+      <div class="side-buttons">
+        <button class="btn btn-side prosecution" data-side="prosecution">
+          <span class="side-icon">&#9760;</span>
+          <span class="side-title">Prosecution</span>
+          <span class="side-desc">Argue for conviction</span>
+        </button>
+        <button class="btn btn-side defense" data-side="defense">
+          <span class="side-icon">&#9876;</span>
+          <span class="side-title">Defense</span>
+          <span class="side-desc">Argue for acquittal</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Screen: Debate -->
+    <section id="debate-screen" class="screen">
+      <div class="debate-header">
+        <h2 id="debate-title">The Debate</h2>
+        <div class="turn-indicator">
+          Round <span id="current-turn">1</span> of <span id="max-turns">3</span>
+        </div>
+      </div>
+
+      <div class="positions-bar">
+        <div class="position you">
+          <span class="position-label">YOU</span>
+          <span id="your-side" class="position-side">Prosecution</span>
+        </div>
+        <div class="vs">VS</div>
+        <div class="position ai">
+          <span class="position-label">AI</span>
+          <span id="ai-side" class="position-side">Defense</span>
+        </div>
+      </div>
+
+      <div id="debate-log" class="debate-log">
+        <!-- Debate exchanges will appear here -->
+      </div>
+
+      <div id="input-area" class="input-area">
+        <textarea id="argument-input" placeholder="Type your argument here... Be persuasive, cite legal principles, and anticipate counterarguments." rows="4"></textarea>
+        <div class="input-actions">
+          <span id="char-count" class="char-count">0 / 1000</span>
+          <button id="submit-argument" class="btn btn-primary">Submit Argument</button>
+        </div>
+      </div>
+
+      <div id="loading-indicator" class="loading hidden">
+        <div class="spinner"></div>
+        <span>AI is formulating a response...</span>
+      </div>
+
+      <button id="request-verdict" class="btn btn-verdict hidden">Request Final Verdict</button>
+    </section>
+
+    <!-- Screen: Verdict -->
+    <section id="verdict-screen" class="screen">
+      <div class="verdict-content">
+        <div id="verdict-winner" class="verdict-winner">
+          <!-- Winner announcement -->
+        </div>
+
+        <div class="scores-section">
+          <h3>Scores</h3>
+          <div class="scores-grid">
+            <div class="score-card you">
+              <h4>Your Scores</h4>
+              <div class="score-items" id="human-scores">
+                <!-- Human scores -->
+              </div>
+            </div>
+            <div class="score-card ai">
+              <h4>AI Scores</h4>
+              <div class="score-items" id="ai-scores">
+                <!-- AI scores -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="feedback-section">
+          <h3>Feedback for You</h3>
+          <div class="feedback-grid">
+            <div class="feedback-card strengths">
+              <h4>What You Did Well</h4>
+              <ul id="strengths-list"></ul>
+            </div>
+            <div class="feedback-card improvements">
+              <h4>Areas to Improve</h4>
+              <ul id="improvements-list"></ul>
+            </div>
+          </div>
+          <div class="study-section">
+            <h4>Concepts to Study</h4>
+            <div id="concepts-list" class="concepts-tags"></div>
+          </div>
+        </div>
+
+        <div class="takeaway-section">
+          <h3>Key Takeaway</h3>
+          <p id="key-takeaway" class="takeaway-text"></p>
+        </div>
+
+        <div class="judge-summary">
+          <h3>Judge's Summary</h3>
+          <p id="judge-summary-text"></p>
+        </div>
+
+        <button id="play-again" class="btn btn-primary">Argue Another Case</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
