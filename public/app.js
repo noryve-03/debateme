@@ -9,11 +9,11 @@ const state = {
   currentTurn: 0,
   maxTurns: 3,
   isReplay: false,
-  // New settings state
   config: null,
   selectedDifficulty: 'associate',
-  selectedModel: null, // null means use difficulty default
-  advancedOpen: false
+  selectedModel: null,
+  advancedOpen: false,
+  loadedDebate: null // Cache for loaded debate data
 };
 
 // DOM Elements
@@ -25,14 +25,302 @@ const screens = {
   verdict: document.getElementById('verdict-screen')
 };
 
-// Screen Navigation
+// ===================
+// ROUTER
+// ===================
+
+const routes = {
+  '/': () => navigateToWelcome(),
+  '/cases': () => navigateToCases(),
+  '/case/:id': (params) => navigateToCase(params.id),
+  '/debate/:id': (params) => navigateToDebate(params.id),
+  '/debate/:id/verdict': (params) => navigateToVerdict(params.id)
+};
+
+function matchRoute(path) {
+  for (const [pattern, handler] of Object.entries(routes)) {
+    const paramNames = [];
+    const regexPattern = pattern.replace(/:([^/]+)/g, (_, name) => {
+      paramNames.push(name);
+      return '([^/]+)';
+    });
+    const regex = new RegExp(`^${regexPattern}$`);
+    const match = path.match(regex);
+
+    if (match) {
+      const params = {};
+      paramNames.forEach((name, i) => {
+        params[name] = match[i + 1];
+      });
+      return { handler, params };
+    }
+  }
+  return null;
+}
+
+function navigate(path, replace = false) {
+  if (replace) {
+    window.history.replaceState({ path }, '', path);
+  } else {
+    window.history.pushState({ path }, '', path);
+  }
+  handleRoute(path);
+}
+
+function handleRoute(path) {
+  const route = matchRoute(path);
+  if (route) {
+    route.handler(route.params);
+  } else {
+    // Default to welcome for unknown routes
+    navigate('/', true);
+  }
+}
+
+// Handle browser back/forward
+window.addEventListener('popstate', (e) => {
+  const path = window.location.pathname;
+  handleRoute(path);
+});
+
+// ===================
+// ROUTE HANDLERS
+// ===================
+
+async function navigateToWelcome() {
+  resetGame();
+  showScreen('welcome');
+}
+
+async function navigateToCases() {
+  if (state.dilemmas.length === 0) {
+    await loadDilemmas();
+  }
+  renderDilemmas();
+  showScreen('case');
+}
+
+async function navigateToCase(caseId) {
+  if (state.dilemmas.length === 0) {
+    await loadDilemmas();
+  }
+
+  const dilemma = state.dilemmas.find(d => d.id === parseInt(caseId));
+  if (!dilemma) {
+    navigate('/', true);
+    return;
+  }
+
+  state.selectedDilemma = dilemma;
+  showSideSelection();
+}
+
+async function navigateToDebate(debateId) {
+  // Check if we have an active session for this debate
+  if (state.sessionId === debateId && state.debateInfo) {
+    showScreen('debate');
+    return;
+  }
+
+  // Show loading state
+  showScreen('debate');
+  const debateLog = document.getElementById('debate-log');
+  debateLog.innerHTML = '<div class="loading"><div class="spinner"></div><span>Loading debate...</span></div>';
+  document.getElementById('input-area').classList.add('hidden');
+  document.getElementById('request-verdict').classList.add('hidden');
+
+  // Load debate from server
+  try {
+    const response = await fetch(`/api/debate/${debateId}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      debateLog.innerHTML = `<div class="error-message">
+        <h3>Debate Not Found</h3>
+        <p>${errorData.error || 'This debate link may be invalid or the debate may have been deleted.'}</p>
+        <button class="btn btn-primary" onclick="navigate('/')">Go Home</button>
+      </div>`;
+      return;
+    }
+
+    const debate = await response.json();
+    state.loadedDebate = debate;
+    state.sessionId = debate.id;
+
+    displayDebate(debate);
+  } catch (error) {
+    console.error('Failed to load debate:', error);
+    debateLog.innerHTML = `<div class="error-message">
+      <h3>Error Loading Debate</h3>
+      <p>Could not connect to the server. Please check your internet connection.</p>
+      <button class="btn btn-primary" onclick="navigate('/')">Go Home</button>
+    </div>`;
+  }
+}
+
+async function navigateToVerdict(debateId) {
+  // If we don't have the debate loaded, load it first
+  if (!state.loadedDebate || state.loadedDebate.id !== debateId) {
+    // Show loading state using the winner div (preserves structure)
+    showScreen('verdict');
+    const winnerDiv = document.getElementById('verdict-winner');
+    if (winnerDiv) {
+      winnerDiv.innerHTML = '<div class="loading"><div class="spinner"></div><span>Loading verdict...</span></div>';
+    }
+
+    try {
+      const response = await fetch(`/api/debate/${debateId}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (winnerDiv) {
+          winnerDiv.innerHTML = `<div class="error-message">
+            <h3>Debate Not Found</h3>
+            <p>${errorData.error || 'This debate link may be invalid or the debate may have been deleted.'}</p>
+            <button class="btn btn-primary" onclick="navigate('/')">Go Home</button>
+          </div>`;
+        }
+        return;
+      }
+      state.loadedDebate = await response.json();
+      state.sessionId = debateId;
+    } catch (error) {
+      console.error('Failed to load verdict:', error);
+      if (winnerDiv) {
+        winnerDiv.innerHTML = `<div class="error-message">
+          <h3>Error Loading Verdict</h3>
+          <p>Could not connect to the server. Please check your internet connection.</p>
+          <button class="btn btn-primary" onclick="navigate('/')">Go Home</button>
+        </div>`;
+      }
+      return;
+    }
+  }
+
+  if (state.loadedDebate.verdict) {
+    state.selectedSide = state.loadedDebate.playerSide;
+    state.debateInfo = { aiSide: state.loadedDebate.aiSide };
+    renderVerdict(state.loadedDebate.verdict, true);
+    showScreen('verdict');
+  } else {
+    // No verdict yet, go to debate
+    navigate(`/debate/${debateId}`, true);
+  }
+}
+
+// ===================
+// SCREEN DISPLAY
+// ===================
+
 function showScreen(screenName) {
   Object.values(screens).forEach(screen => screen.classList.remove('active'));
   screens[screenName].classList.add('active');
   state.currentScreen = screenName;
 }
 
-// Load configuration (models and difficulties)
+function displayDebate(debate) {
+  state.isReplay = debate.status === 'completed';
+  state.selectedSide = debate.playerSide;
+  state.debateInfo = {
+    dilemma: debate.dilemma,
+    aiSide: debate.aiSide,
+    difficulty: debate.difficulty || 'Unknown',
+    model: debate.model || 'Unknown'
+  };
+
+  // Safely extract dilemma data with fallbacks
+  const dilemma = debate.dilemma || {};
+  const title = dilemma.title || 'Unknown Case';
+  const description = dilemma.description || 'Case details not available.';
+  const context = dilemma.context || 'Legal context not available.';
+  const positions = dilemma.positions || {};
+  const humanPosition = positions[debate.playerSide] || 'Position not available.';
+
+  document.getElementById('debate-title').textContent = title;
+  document.getElementById('current-turn').textContent = debate.turns?.length || 0;
+  document.getElementById('max-turns').textContent = '3';
+  document.getElementById('your-side').textContent = capitalize(debate.playerSide);
+  document.getElementById('ai-side').textContent = capitalize(debate.aiSide);
+
+  const debateLog = document.getElementById('debate-log');
+
+  // Show replay badge for completed debates
+  const replayBadge = debate.status === 'completed'
+    ? '<div class="replay-badge">Viewing Saved Debate</div>'
+    : '';
+
+  debateLog.innerHTML = `
+    ${replayBadge}
+    <div class="context-box">
+      <h4>Case Background</h4>
+      <p>${escapeHtml(description)}</p>
+      <p><strong>Legal Context:</strong> ${escapeHtml(context)}</p>
+      <p><strong>Human Position (${capitalize(debate.playerSide)}):</strong> ${escapeHtml(humanPosition)}</p>
+    </div>
+  `;
+
+  // Add all turns
+  if (debate.turns) {
+    debate.turns.forEach(turn => {
+      const playerEntry = document.createElement('div');
+      playerEntry.className = 'debate-entry player';
+      playerEntry.innerHTML = `
+        <div class="entry-header">Round ${turn.turn} - Human (${capitalize(debate.playerSide)})</div>
+        <div class="entry-content">${escapeHtml(turn.player)}</div>
+      `;
+      debateLog.appendChild(playerEntry);
+
+      if (turn.ai) {
+        const aiEntry = document.createElement('div');
+        aiEntry.className = 'debate-entry ai';
+        aiEntry.innerHTML = `
+          <div class="entry-header">Round ${turn.turn} - AI (${capitalize(debate.aiSide)})</div>
+          <div class="entry-content">${escapeHtml(turn.ai)}</div>
+        `;
+        debateLog.appendChild(aiEntry);
+      }
+    });
+
+    state.currentTurn = debate.turns.length;
+  }
+
+  // Remove any existing verdict buttons
+  const existingBtn = document.querySelector('.btn-verdict:not(#request-verdict)');
+  if (existingBtn) existingBtn.remove();
+
+  // Handle input area and verdict button based on status
+  if (debate.status === 'completed' || debate.status === 'judging') {
+    document.getElementById('input-area').classList.add('hidden');
+    document.getElementById('request-verdict').classList.add('hidden');
+
+    if (debate.verdict) {
+      const viewVerdictBtn = document.createElement('button');
+      viewVerdictBtn.className = 'btn btn-verdict';
+      viewVerdictBtn.textContent = 'View Verdict';
+      viewVerdictBtn.onclick = () => navigate(`/debate/${debate.id}/verdict`);
+      debateLog.parentNode.appendChild(viewVerdictBtn);
+    }
+  } else if (debate.status === 'active') {
+    // Active debate - can continue
+    if (debate.turns && debate.turns.length >= 3) {
+      document.getElementById('input-area').classList.add('hidden');
+      document.getElementById('request-verdict').classList.remove('hidden');
+      document.getElementById('request-verdict').disabled = false;
+      document.getElementById('request-verdict').textContent = 'Request Final Verdict';
+    } else {
+      document.getElementById('input-area').classList.remove('hidden');
+      document.getElementById('request-verdict').classList.add('hidden');
+      document.getElementById('argument-input').value = '';
+      document.getElementById('argument-input').disabled = false;
+      document.getElementById('submit-argument').disabled = false;
+    }
+  }
+
+  showScreen('debate');
+}
+
+// ===================
+// INITIALIZATION
+// ===================
+
 async function loadConfig() {
   try {
     const response = await fetch('/api/config');
@@ -43,133 +331,40 @@ async function loadConfig() {
   }
 }
 
-// Check if we're viewing a saved debate
-async function checkForSavedDebate() {
-  const path = window.location.pathname;
-  const match = path.match(/^\/debate\/([a-zA-Z0-9_-]+)$/);
-
-  if (match) {
-    const debateId = match[1];
-    try {
-      const response = await fetch(`/api/debate/${debateId}`);
-      if (response.ok) {
-        const debate = await response.json();
-        displaySavedDebate(debate);
-        return true;
-      }
-    } catch (error) {
-      console.error('Failed to load debate:', error);
-    }
-  }
-  return false;
-}
-
-// Display a saved/completed debate
-function displaySavedDebate(debate) {
-  state.isReplay = true;
-  state.sessionId = debate.id;
-  state.debateInfo = {
-    dilemma: debate.dilemma,
-    aiSide: debate.aiSide
-  };
-  state.selectedSide = debate.playerSide;
-
-  // Setup debate screen in replay mode
-  document.getElementById('debate-title').textContent = debate.dilemma.title;
-  document.getElementById('current-turn').textContent = debate.turns.length;
-  document.getElementById('max-turns').textContent = '3';
-  document.getElementById('your-side').textContent = capitalize(debate.playerSide);
-  document.getElementById('ai-side').textContent = capitalize(debate.aiSide);
-
-  // Build debate log
-  const debateLog = document.getElementById('debate-log');
-  debateLog.innerHTML = `
-    <div class="context-box">
-      <h4>Case Background</h4>
-      <p>${debate.dilemma.description}</p>
-      <p><strong>Legal Context:</strong> ${debate.dilemma.context}</p>
-      <p><strong>Human Position (${capitalize(debate.playerSide)}):</strong> ${debate.dilemma.positions[debate.playerSide]}</p>
-    </div>
-    <div class="replay-badge">Viewing Saved Debate</div>
-  `;
-
-  // Add all turns
-  debate.turns.forEach(turn => {
-    const playerEntry = document.createElement('div');
-    playerEntry.className = 'debate-entry player';
-    playerEntry.innerHTML = `
-      <div class="entry-header">Round ${turn.turn} - Human (${capitalize(debate.playerSide)})</div>
-      <div class="entry-content">${escapeHtml(turn.player)}</div>
-    `;
-    debateLog.appendChild(playerEntry);
-
-    if (turn.ai) {
-      const aiEntry = document.createElement('div');
-      aiEntry.className = 'debate-entry ai';
-      aiEntry.innerHTML = `
-        <div class="entry-header">Round ${turn.turn} - AI (${capitalize(debate.aiSide)})</div>
-        <div class="entry-content">${escapeHtml(turn.ai)}</div>
-      `;
-      debateLog.appendChild(aiEntry);
-    }
-  });
-
-  // Hide input area in replay mode
-  document.getElementById('input-area').classList.add('hidden');
-  document.getElementById('request-verdict').classList.add('hidden');
-
-  // If verdict exists, show button to view it
-  if (debate.verdict) {
-    const viewVerdictBtn = document.createElement('button');
-    viewVerdictBtn.className = 'btn btn-verdict';
-    viewVerdictBtn.textContent = 'View Verdict';
-    viewVerdictBtn.onclick = () => {
-      renderVerdict(debate.verdict, true);
-      showScreen('verdict');
-    };
-    debateLog.parentNode.appendChild(viewVerdictBtn);
-  }
-
-  showScreen('debate');
-}
-
-// Initialize
-async function init() {
-  await loadConfig();
-  const isSavedDebate = await checkForSavedDebate();
-  if (!isSavedDebate) {
-    showScreen('welcome');
-  }
-}
-
-// Event Listeners
-document.getElementById('start-btn').addEventListener('click', async () => {
-  await loadDilemmas();
-  showScreen('case');
-});
-
-document.getElementById('play-again').addEventListener('click', () => {
-  resetGame();
-  // Clear URL if we were viewing a saved debate
-  if (window.location.pathname !== '/') {
-    window.history.pushState({}, '', '/');
-  }
-  showScreen('welcome');
-});
-
-// Load dilemmas from API
 async function loadDilemmas() {
   try {
     const response = await fetch('/api/dilemmas');
     state.dilemmas = await response.json();
-    renderDilemmas();
   } catch (error) {
     console.error('Failed to load dilemmas:', error);
     alert('Failed to load cases. Please refresh the page.');
   }
 }
 
-// Render dilemmas list
+async function init() {
+  await loadConfig();
+
+  // Handle initial route
+  const path = window.location.pathname;
+  handleRoute(path);
+}
+
+// ===================
+// EVENT LISTENERS
+// ===================
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  navigate('/cases');
+});
+
+document.getElementById('play-again').addEventListener('click', () => {
+  navigate('/');
+});
+
+// ===================
+// UI RENDERING
+// ===================
+
 function renderDilemmas() {
   const container = document.getElementById('cases-list');
   container.innerHTML = state.dilemmas.map(d => `
@@ -179,17 +374,14 @@ function renderDilemmas() {
     </div>
   `).join('');
 
-  // Add click handlers
   container.querySelectorAll('.case-card').forEach(card => {
     card.addEventListener('click', () => {
-      const id = parseInt(card.dataset.id);
-      state.selectedDilemma = state.dilemmas.find(d => d.id === id);
-      showSideSelection();
+      const id = card.dataset.id;
+      navigate(`/case/${id}`);
     });
   });
 }
 
-// Show side selection screen
 function showSideSelection() {
   const preview = document.getElementById('case-preview');
   preview.innerHTML = `
@@ -197,14 +389,11 @@ function showSideSelection() {
     <p>${state.selectedDilemma.description}</p>
   `;
 
-  // Render difficulty options
   renderDifficultyOptions();
   renderModelOptions();
-
   showScreen('side');
 }
 
-// Render difficulty options
 function renderDifficultyOptions() {
   if (!state.config) return;
 
@@ -216,19 +405,17 @@ function renderDifficultyOptions() {
     </div>
   `).join('');
 
-  // Add click handlers
   container.querySelectorAll('.difficulty-option').forEach(option => {
     option.addEventListener('click', () => {
       state.selectedDifficulty = option.dataset.id;
-      state.selectedModel = null; // Reset model override
+      state.selectedModel = null;
       container.querySelectorAll('.difficulty-option').forEach(o => o.classList.remove('selected'));
       option.classList.add('selected');
-      renderModelOptions(); // Update model highlights
+      renderModelOptions();
     });
   });
 }
 
-// Render model options
 function renderModelOptions() {
   if (!state.config) return;
 
@@ -249,7 +436,6 @@ function renderModelOptions() {
     `;
   }).join('');
 
-  // Add click handlers
   container.querySelectorAll('.model-option').forEach(option => {
     option.addEventListener('click', () => {
       state.selectedModel = option.dataset.id;
@@ -262,7 +448,6 @@ function renderModelOptions() {
   });
 }
 
-// Advanced settings toggle
 document.getElementById('toggle-advanced').addEventListener('click', () => {
   const panel = document.getElementById('advanced-settings');
   const btn = document.getElementById('toggle-advanced');
@@ -285,7 +470,10 @@ document.querySelectorAll('.btn-side').forEach(btn => {
   });
 });
 
-// Start the debate
+// ===================
+// DEBATE ACTIONS
+// ===================
+
 async function startDebate() {
   try {
     const payload = {
@@ -294,7 +482,6 @@ async function startDebate() {
       difficulty: state.selectedDifficulty
     };
 
-    // Only include model if explicitly selected (override)
     if (state.selectedModel) {
       payload.model = state.selectedModel;
     }
@@ -311,19 +498,16 @@ async function startDebate() {
     state.currentTurn = 0;
     state.maxTurns = data.maxTurns;
     state.isReplay = false;
-
-    // Update URL to the debate's unique ID (for bookmarking/sharing)
-    window.history.pushState({}, '', `/debate/${data.sessionId}`);
+    state.loadedDebate = null;
 
     setupDebateScreen();
-    showScreen('debate');
+    navigate(`/debate/${data.sessionId}`, true);
   } catch (error) {
     console.error('Failed to start debate:', error);
     alert('Failed to start debate. Please try again.');
   }
 }
 
-// Setup debate screen
 function setupDebateScreen() {
   document.getElementById('debate-title').textContent = state.debateInfo.dilemma.title;
   document.getElementById('current-turn').textContent = '1';
@@ -331,7 +515,6 @@ function setupDebateScreen() {
   document.getElementById('your-side').textContent = capitalize(state.selectedSide);
   document.getElementById('ai-side').textContent = capitalize(state.debateInfo.aiSide);
 
-  // Clear debate log and add context
   const debateLog = document.getElementById('debate-log');
   debateLog.innerHTML = `
     <div class="debate-info-badge">
@@ -346,22 +529,25 @@ function setupDebateScreen() {
     </div>
   `;
 
-  // Reset input
+  // Remove any existing verdict buttons
+  const existingBtn = document.querySelector('.btn-verdict:not(#request-verdict)');
+  if (existingBtn) existingBtn.remove();
+
   document.getElementById('argument-input').value = '';
   document.getElementById('argument-input').disabled = false;
   document.getElementById('submit-argument').disabled = false;
   document.getElementById('char-count').textContent = '0 / 1000';
   document.getElementById('request-verdict').classList.add('hidden');
   document.getElementById('input-area').classList.remove('hidden');
+
+  showScreen('debate');
 }
 
-// Character counter
 document.getElementById('argument-input').addEventListener('input', (e) => {
   const count = e.target.value.length;
   document.getElementById('char-count').textContent = `${count} / 1000`;
 });
 
-// Submit argument
 document.getElementById('submit-argument').addEventListener('click', submitArgument);
 
 document.getElementById('argument-input').addEventListener('keydown', (e) => {
@@ -384,12 +570,10 @@ async function submitArgument() {
     return;
   }
 
-  // Disable input while processing
   input.disabled = true;
   document.getElementById('submit-argument').disabled = true;
   document.getElementById('loading-indicator').classList.remove('hidden');
 
-  // Add player's argument to log
   addToDebateLog('player', argument, state.currentTurn + 1);
 
   try {
@@ -408,22 +592,18 @@ async function submitArgument() {
       throw new Error(data.error);
     }
 
-    // Add AI response to log
     addToDebateLog('ai', data.aiResponse, data.turn);
 
     state.currentTurn = data.turn;
     document.getElementById('current-turn').textContent = data.turn;
 
-    // Clear input
     input.value = '';
     document.getElementById('char-count').textContent = '0 / 1000';
 
     if (data.isLastTurn) {
-      // Show verdict button, hide input
       document.getElementById('input-area').classList.add('hidden');
       document.getElementById('request-verdict').classList.remove('hidden');
     } else {
-      // Re-enable input
       input.disabled = false;
       document.getElementById('submit-argument').disabled = false;
     }
@@ -438,7 +618,6 @@ async function submitArgument() {
   }
 }
 
-// Add entry to debate log
 function addToDebateLog(type, content, turn) {
   const log = document.getElementById('debate-log');
   const label = type === 'player' ? `You (${capitalize(state.selectedSide)})` : `AI (${capitalize(state.debateInfo.aiSide)})`;
@@ -454,7 +633,6 @@ function addToDebateLog(type, content, turn) {
   log.scrollTop = log.scrollHeight;
 }
 
-// Request verdict
 document.getElementById('request-verdict').addEventListener('click', async () => {
   document.getElementById('request-verdict').disabled = true;
   document.getElementById('request-verdict').textContent = 'Judge is deliberating...';
@@ -472,8 +650,9 @@ document.getElementById('request-verdict').addEventListener('click', async () =>
       throw new Error(verdict.error);
     }
 
+    state.loadedDebate = { ...state.loadedDebate, verdict };
     renderVerdict(verdict, false);
-    showScreen('verdict');
+    navigate(`/debate/${state.sessionId}/verdict`, true);
 
   } catch (error) {
     console.error('Failed to get verdict:', error);
@@ -483,52 +662,59 @@ document.getElementById('request-verdict').addEventListener('click', async () =>
   }
 });
 
-// Render verdict screen
 function renderVerdict(verdict, isReplay = false) {
   const isWin = verdict.winner === 'human';
 
-  // Winner announcement
   const winnerDiv = document.getElementById('verdict-winner');
   winnerDiv.className = `verdict-winner ${isWin ? 'win' : 'lose'}`;
+
+  const shareUrl = `${window.location.origin}/debate/${state.sessionId}`;
+
   winnerDiv.innerHTML = `
     <h2>${isWin ? 'Victory!' : 'Defeat'}</h2>
     <p>${isWin ? 'Congratulations! The human won the debate.' : 'The AI opponent won this round.'}</p>
-    ${!isReplay ? `
-      <div class="share-link">
-        <p>Share this debate:</p>
-        <input type="text" readonly value="${window.location.origin}/debate/${state.sessionId}" onclick="this.select(); document.execCommand('copy'); alert('Link copied!');">
-      </div>
-    ` : ''}
+    <div class="share-link">
+      <p>Share this debate:</p>
+      <input type="text" readonly value="${shareUrl}" id="share-url-input">
+      <button class="btn btn-secondary" id="copy-link-btn">Copy Link</button>
+    </div>
   `;
 
-  // Human scores
-  const humanScores = document.getElementById('human-scores');
-  humanScores.innerHTML = renderScoreItems(verdict.humanScores);
+  // Add copy button functionality
+  setTimeout(() => {
+    const copyBtn = document.getElementById('copy-link-btn');
+    const shareInput = document.getElementById('share-url-input');
+    if (copyBtn && shareInput) {
+      copyBtn.addEventListener('click', () => {
+        shareInput.select();
+        navigator.clipboard.writeText(shareInput.value).then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => copyBtn.textContent = 'Copy Link', 2000);
+        }).catch(() => {
+          document.execCommand('copy');
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => copyBtn.textContent = 'Copy Link', 2000);
+        });
+      });
+    }
+  }, 0);
 
-  // AI scores
-  const aiScores = document.getElementById('ai-scores');
-  aiScores.innerHTML = renderScoreItems(verdict.aiScores);
+  document.getElementById('human-scores').innerHTML = renderScoreItems(verdict.humanScores);
+  document.getElementById('ai-scores').innerHTML = renderScoreItems(verdict.aiScores);
 
-  // Strengths
-  const strengthsList = document.getElementById('strengths-list');
-  strengthsList.innerHTML = (verdict.humanStrengths || [])
+  document.getElementById('strengths-list').innerHTML = (verdict.humanStrengths || [])
     .map(s => `<li>${escapeHtml(s)}</li>`).join('');
 
-  // Improvements
-  const improvementsList = document.getElementById('improvements-list');
-  improvementsList.innerHTML = (verdict.humanImprovements || [])
+  document.getElementById('improvements-list').innerHTML = (verdict.humanImprovements || [])
     .map(s => `<li>${escapeHtml(s)}</li>`).join('');
 
-  // Concepts to study
-  const conceptsList = document.getElementById('concepts-list');
-  conceptsList.innerHTML = (verdict.conceptsToStudy || [])
+  document.getElementById('concepts-list').innerHTML = (verdict.conceptsToStudy || [])
     .map(c => `<span class="concept-tag">${escapeHtml(c)}</span>`).join('');
 
-  // Key takeaway
   document.getElementById('key-takeaway').textContent = verdict.keyTakeaway || '';
-
-  // Judge summary
   document.getElementById('judge-summary-text').textContent = verdict.judgeSummary || '';
+
+  showScreen('verdict');
 }
 
 function renderScoreItems(scores) {
@@ -553,7 +739,6 @@ function renderScoreItems(scores) {
   `;
 }
 
-// Reset game state
 function resetGame() {
   state.selectedDilemma = null;
   state.selectedSide = null;
@@ -563,18 +748,19 @@ function resetGame() {
   state.isReplay = false;
   state.selectedModel = null;
   state.advancedOpen = false;
+  state.loadedDebate = null;
 
-  // Reset advanced panel
   document.getElementById('advanced-settings').classList.add('hidden');
   document.getElementById('toggle-advanced').textContent = 'Advanced Settings';
 }
 
-// Utility functions
 function capitalize(str) {
+  if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 function escapeHtml(text) {
+  if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;

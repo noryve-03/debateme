@@ -294,7 +294,10 @@ app.post('/api/debate/argue', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired session' });
     }
 
-    const dilemma = DILEMMAS.find(d => d.id === dbDebate.dilemma_id);
+    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+    if (!dilemma) {
+      return res.status(400).json({ error: 'Dilemma not found for this debate' });
+    }
     const turns = db.getTurns(sessionId);
 
     session = {
@@ -370,7 +373,10 @@ app.post('/api/debate/judge', async (req, res) => {
       return res.json(existingVerdict);
     }
 
-    const dilemma = DILEMMAS.find(d => d.id === dbDebate.dilemma_id);
+    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+    if (!dilemma) {
+      return res.status(400).json({ error: 'Dilemma not found for this debate' });
+    }
     const turns = db.getTurns(sessionId);
 
     session = {
@@ -415,17 +421,28 @@ app.get('/api/debate/:id', (req, res) => {
     return res.status(404).json({ error: 'Debate not found' });
   }
 
-  // Get dilemma details
-  const dilemma = DILEMMAS.find(d => d.id === fullDebate.dilemma_id);
+  // Get dilemma details (use == for type coercion in case of string/number mismatch)
+  const dilemma = DILEMMAS.find(d => d.id == fullDebate.dilemma_id);
+
+  // Build complete dilemma object with fallbacks
+  const dilemmaData = dilemma ? {
+    title: dilemma.title,
+    description: dilemma.description,
+    context: dilemma.context,
+    positions: dilemma.positions
+  } : {
+    title: fullDebate.dilemma_title || 'Unknown Case',
+    description: 'Case details not available.',
+    context: 'Legal context not available.',
+    positions: {
+      prosecution: 'Position not available.',
+      defense: 'Position not available.'
+    }
+  };
 
   res.json({
     id: fullDebate.id,
-    dilemma: dilemma ? {
-      title: dilemma.title,
-      description: dilemma.description,
-      context: dilemma.context,
-      positions: dilemma.positions
-    } : { title: fullDebate.dilemma_title },
+    dilemma: dilemmaData,
     playerSide: fullDebate.player_side,
     aiSide: fullDebate.ai_side,
     status: fullDebate.status,
@@ -435,8 +452,20 @@ app.get('/api/debate/:id', (req, res) => {
   });
 });
 
-// Serve debate replay page
+// Serve SPA for all client-side routes
 app.get('/debate/:id', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/debate/:id/verdict', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/cases', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/case/:id', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 

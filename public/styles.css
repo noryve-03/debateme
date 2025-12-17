@@ -868,3 +868,27 @@ header h1 {
 .context-box strong {
   color: var(--text);
 }
+
+/* Error message styling */
+.error-message {
+  text-align: center;
+  padding: 40px 20px;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: 12px;
+  margin: 20px 0;
+}
+
+.error-message h3 {
+  color: #e74c3c;
+  margin-bottom: 15px;
+}
+
+.error-message p {
+  color: var(--text-dim);
+  margin-bottom: 20px;
+}
+
+.error-message .btn {
+  margin-top: 10px;
+}
