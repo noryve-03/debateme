@@ -1,3 +1,25 @@
+// Theme management
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  if (current === 'dark') {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
+// Initialize theme immediately
+initTheme();
+
 // State management
 const state = {
   currentScreen: 'welcome',
@@ -360,6 +382,8 @@ document.getElementById('start-btn').addEventListener('click', () => {
 document.getElementById('play-again').addEventListener('click', () => {
   navigate('/');
 });
+
+document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
 // ===================
 // UI RENDERING
