@@ -234,11 +234,30 @@ app.get('/api/dilemmas', (req, res) => {
 
 // API: Start a new debate
 app.post('/api/debate/start', (req, res) => {
-  const { dilemmaId, playerSide, difficulty = 'associate', model } = req.body;
+  const { dilemmaId, playerSide, difficulty = 'associate', model, customCase } = req.body;
 
-  const dilemma = DILEMMAS.find(d => d.id === dilemmaId);
-  if (!dilemma) {
-    return res.status(400).json({ error: 'Invalid dilemma ID' });
+  let dilemma;
+  let isCustomCase = false;
+
+  // Handle custom cases (user-created or AI-generated)
+  if (dilemmaId === 'custom' && customCase) {
+    // Validate custom case has required fields
+    if (!customCase.title || !customCase.description || !customCase.positions?.prosecution || !customCase.positions?.defense) {
+      return res.status(400).json({ error: 'Invalid custom case data' });
+    }
+    dilemma = {
+      id: 'custom',
+      title: customCase.title,
+      description: customCase.description,
+      context: customCase.context || 'Custom case created by user.',
+      positions: customCase.positions
+    };
+    isCustomCase = true;
+  } else {
+    dilemma = DILEMMAS.find(d => d.id === dilemmaId);
+    if (!dilemma) {
+      return res.status(400).json({ error: 'Invalid dilemma ID' });
+    }
   }
 
   const difficultyConfig = DIFFICULTIES[difficulty] || DIFFICULTIES.associate;
@@ -247,7 +266,14 @@ app.post('/api/debate/start', (req, res) => {
   const aiSide = playerSide === 'prosecution' ? 'defense' : 'prosecution';
 
   // Create in database with hard-to-guess ID
-  const sessionId = db.createDebate(dilemmaId, dilemma.title, playerSide, aiSide);
+  // For custom cases, store the full case data
+  const sessionId = db.createDebate(
+    isCustomCase ? 'custom' : dilemmaId,
+    dilemma.title,
+    playerSide,
+    aiSide,
+    isCustomCase ? dilemma : null
+  );
 
   const session = {
     id: sessionId,
@@ -294,9 +320,19 @@ app.post('/api/debate/argue', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired session' });
     }
 
-    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
-    if (!dilemma) {
-      return res.status(400).json({ error: 'Dilemma not found for this debate' });
+    let dilemma;
+    // Check for custom case data first
+    if (dbDebate.custom_case_data) {
+      try {
+        dilemma = JSON.parse(dbDebate.custom_case_data);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid custom case data' });
+      }
+    } else {
+      dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+      if (!dilemma) {
+        return res.status(400).json({ error: 'Dilemma not found for this debate' });
+      }
     }
     const turns = db.getTurns(sessionId);
 
@@ -373,9 +409,19 @@ app.post('/api/debate/judge', async (req, res) => {
       return res.json(existingVerdict);
     }
 
-    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
-    if (!dilemma) {
-      return res.status(400).json({ error: 'Dilemma not found for this debate' });
+    let dilemma;
+    // Check for custom case data first
+    if (dbDebate.custom_case_data) {
+      try {
+        dilemma = JSON.parse(dbDebate.custom_case_data);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid custom case data' });
+      }
+    } else {
+      dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+      if (!dilemma) {
+        return res.status(400).json({ error: 'Dilemma not found for this debate' });
+      }
     }
     const turns = db.getTurns(sessionId);
 
@@ -421,24 +467,36 @@ app.get('/api/debate/:id', (req, res) => {
     return res.status(404).json({ error: 'Debate not found' });
   }
 
-  // Get dilemma details (use == for type coercion in case of string/number mismatch)
-  const dilemma = DILEMMAS.find(d => d.id == fullDebate.dilemma_id);
+  let dilemmaData;
 
-  // Build complete dilemma object with fallbacks
-  const dilemmaData = dilemma ? {
-    title: dilemma.title,
-    description: dilemma.description,
-    context: dilemma.context,
-    positions: dilemma.positions
-  } : {
-    title: fullDebate.dilemma_title || 'Unknown Case',
-    description: 'Case details not available.',
-    context: 'Legal context not available.',
-    positions: {
-      prosecution: 'Position not available.',
-      defense: 'Position not available.'
-    }
-  };
+  // Check if this is a custom case with stored data
+  if (fullDebate.customCaseData) {
+    dilemmaData = {
+      title: fullDebate.customCaseData.title,
+      description: fullDebate.customCaseData.description,
+      context: fullDebate.customCaseData.context || 'Custom case.',
+      positions: fullDebate.customCaseData.positions
+    };
+  } else {
+    // Get dilemma details from predefined list (use == for type coercion)
+    const dilemma = DILEMMAS.find(d => d.id == fullDebate.dilemma_id);
+
+    // Build complete dilemma object with fallbacks
+    dilemmaData = dilemma ? {
+      title: dilemma.title,
+      description: dilemma.description,
+      context: dilemma.context,
+      positions: dilemma.positions
+    } : {
+      title: fullDebate.dilemma_title || 'Unknown Case',
+      description: 'Case details not available.',
+      context: 'Legal context not available.',
+      positions: {
+        prosecution: 'Position not available.',
+        defense: 'Position not available.'
+      }
+    };
+  }
 
   res.json({
     id: fullDebate.id,
@@ -452,6 +510,93 @@ app.get('/api/debate/:id', (req, res) => {
   });
 });
 
+// API: Generate a new case with AI
+app.post('/api/cases/generate', async (req, res) => {
+  const { topic, complexity = 'moderate' } = req.body;
+
+  if (!topic) {
+    return res.status(400).json({ error: 'Topic is required' });
+  }
+
+  try {
+    const generatedCase = await generateCase(topic, complexity);
+    res.json(generatedCase);
+  } catch (error) {
+    console.error('Case generation error:', error);
+    res.status(500).json({ error: 'Failed to generate case' });
+  }
+});
+
+// Generate a legal case/dilemma using AI
+async function generateCase(topic, complexity) {
+  const complexityInstructions = {
+    simple: 'Create a straightforward case with clear-cut arguments on both sides. The facts should be simple and the legal principles basic.',
+    moderate: 'Create a case with some nuance and complexity. Include multiple relevant factors and legal principles that could apply.',
+    complex: 'Create a sophisticated case with deep moral and legal ambiguity. Include competing rights, multiple stakeholders, potential precedents, and philosophical dimensions.'
+  };
+
+  const prompt = `You are an expert legal educator creating case studies for law students to debate.
+
+USER'S REQUEST: "${topic}"
+
+COMPLEXITY LEVEL: ${complexity.toUpperCase()}
+${complexityInstructions[complexity] || complexityInstructions.moderate}
+
+Generate a compelling legal dilemma/case for debate. The case should:
+1. Present a realistic scenario with specific facts and parties
+2. Have two defensible positions (prosecution/plaintiff vs defense)
+3. Raise interesting legal and ethical questions
+4. Be suitable for a structured debate format
+
+Respond in this exact JSON format (no markdown, just raw JSON):
+{
+  "title": "Short, memorable case name (e.g., 'The Midnight Surgeon Case')",
+  "description": "2-4 sentences describing the facts of the case, what happened, and who is involved. Be specific with details.",
+  "context": "1-2 sentences about what legal principles, areas of law, or ethical frameworks this case explores.",
+  "positions": {
+    "prosecution": "1-2 sentences stating the prosecution/plaintiff's core argument and what they seek.",
+    "defense": "1-2 sentences stating the defense's core argument and their position."
+  }
+}`;
+
+  const completion = await groq.chat.completions.create({
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a legal case writer. You respond only with valid JSON, no markdown formatting or explanations.'
+      },
+      { role: 'user', content: prompt }
+    ],
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.8,
+    max_tokens: 600
+  });
+
+  const responseText = completion.choices[0]?.message?.content || '{}';
+
+  try {
+    // Try to extract JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      // Validate required fields
+      if (parsed.title && parsed.description && parsed.positions?.prosecution && parsed.positions?.defense) {
+        return {
+          title: parsed.title,
+          description: parsed.description,
+          context: parsed.context || 'Legal and ethical dilemma for debate.',
+          positions: parsed.positions
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse generated case:', e);
+  }
+
+  // Fallback if parsing fails
+  throw new Error('Failed to generate a valid case. Please try again.');
+}
+
 // Serve SPA for all client-side routes
 app.get('/debate/:id', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
@@ -462,6 +607,14 @@ app.get('/debate/:id/verdict', (req, res) => {
 });
 
 app.get('/cases', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/cases/new', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/cases/generate', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
@@ -501,9 +654,19 @@ app.post('/api/debate/assist', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or expired session' });
     }
 
-    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
-    if (!dilemma) {
-      return res.status(400).json({ error: 'Dilemma not found' });
+    let dilemma;
+    // Check for custom case data first
+    if (dbDebate.custom_case_data) {
+      try {
+        dilemma = JSON.parse(dbDebate.custom_case_data);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid custom case data' });
+      }
+    } else {
+      dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+      if (!dilemma) {
+        return res.status(400).json({ error: 'Dilemma not found' });
+      }
     }
     const turns = db.getTurns(sessionId);
 

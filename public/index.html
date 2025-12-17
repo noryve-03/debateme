@@ -16,8 +16,14 @@
 
     <!-- Header -->
     <header>
-      <h1>Argue Against the Machine</h1>
-      <p class="tagline">Human vs AI Legal Debate</p>
+      <nav class="nav-bar">
+        <button class="nav-btn" id="nav-back" aria-label="Go back">&#8592;</button>
+        <button class="nav-btn" id="nav-home" aria-label="Go home">&#8962;</button>
+      </nav>
+      <div class="header-title" id="header-home">
+        <h1>Argue Against the Machine</h1>
+        <p class="tagline">Human vs AI Legal Debate</p>
+      </div>
     </header>
 
     <!-- Screen: Welcome -->
@@ -42,8 +48,83 @@
     <!-- Screen: Case Selection -->
     <section id="case-screen" class="screen">
       <h2>Select Your Case</h2>
+      <div class="case-actions">
+        <button class="btn btn-secondary" id="create-custom-case">+ Create Custom Case</button>
+        <button class="btn btn-secondary" id="generate-ai-case">Generate with AI</button>
+      </div>
       <div id="cases-list" class="cases-grid">
         <!-- Cases will be loaded here -->
+      </div>
+    </section>
+
+    <!-- Screen: Custom Case Creator -->
+    <section id="custom-case-screen" class="screen">
+      <h2>Create Custom Case</h2>
+      <div class="custom-case-form">
+        <div class="form-group">
+          <label for="custom-title">Case Title</label>
+          <input type="text" id="custom-title" placeholder="e.g., The Social Media Privacy Case">
+        </div>
+        <div class="form-group">
+          <label for="custom-description">Case Description</label>
+          <textarea id="custom-description" rows="4" placeholder="Describe the facts of the case, the parties involved, and what happened..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="custom-context">Legal Context</label>
+          <textarea id="custom-context" rows="2" placeholder="What legal principles or areas of law does this case explore?"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group half">
+            <label for="custom-prosecution">Prosecution/Plaintiff Position</label>
+            <textarea id="custom-prosecution" rows="3" placeholder="What is the prosecution or plaintiff arguing?"></textarea>
+          </div>
+          <div class="form-group half">
+            <label for="custom-defense">Defense Position</label>
+            <textarea id="custom-defense" rows="3" placeholder="What is the defense arguing?"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="cancel-custom-case">Cancel</button>
+          <button class="btn btn-primary" id="save-custom-case">Use This Case</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen: AI Case Generator -->
+    <section id="ai-case-screen" class="screen">
+      <h2>Generate Case with AI</h2>
+      <div class="ai-case-form">
+        <div class="form-group">
+          <label for="ai-case-topic">Describe the type of case you want</label>
+          <textarea id="ai-case-topic" rows="3" placeholder="e.g., A case about AI-generated art and copyright, or a medical ethics dilemma involving experimental treatment..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Complexity</label>
+          <div class="complexity-options">
+            <button class="complexity-btn active" data-complexity="simple">Simple</button>
+            <button class="complexity-btn" data-complexity="moderate">Moderate</button>
+            <button class="complexity-btn" data-complexity="complex">Complex</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="generate-case-btn">Generate Case</button>
+        <div id="generated-case-preview" class="generated-case-preview hidden">
+          <h3 id="gen-case-title"></h3>
+          <p id="gen-case-description"></p>
+          <div class="gen-case-positions">
+            <div class="gen-position">
+              <strong>Prosecution:</strong>
+              <p id="gen-case-prosecution"></p>
+            </div>
+            <div class="gen-position">
+              <strong>Defense:</strong>
+              <p id="gen-case-defense"></p>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-secondary" id="regenerate-case">Regenerate</button>
+            <button class="btn btn-primary" id="use-generated-case">Use This Case</button>
+          </div>
+        </div>
       </div>
     </section>
 

@@ -38,17 +38,25 @@ const state = {
   loadedDebate: null, // Cache for loaded debate data
   inputMode: 'manual', // 'manual' or 'assist'
   generatedArgument: null,
-  lastAssistMode: null // 'scratch' or 'expand'
+  lastAssistMode: null, // 'scratch' or 'expand'
+  customCase: null, // User-created or AI-generated custom case
+  generatedCase: null, // Temp storage for AI-generated case before confirmation
+  selectedComplexity: 'simple'
 };
 
 // DOM Elements
 const screens = {
   welcome: document.getElementById('welcome-screen'),
   case: document.getElementById('case-screen'),
+  customCase: document.getElementById('custom-case-screen'),
+  aiCase: document.getElementById('ai-case-screen'),
   side: document.getElementById('side-screen'),
   debate: document.getElementById('debate-screen'),
   verdict: document.getElementById('verdict-screen')
 };
+
+// Navigation history for back button
+const navHistory = [];
 
 // ===================
 // ROUTER
@@ -57,6 +65,8 @@ const screens = {
 const routes = {
   '/': () => navigateToWelcome(),
   '/cases': () => navigateToCases(),
+  '/cases/new': () => navigateToCustomCase(),
+  '/cases/generate': () => navigateToAiCase(),
   '/case/:id': (params) => navigateToCase(params.id),
   '/debate/:id': (params) => navigateToDebate(params.id),
   '/debate/:id/verdict': (params) => navigateToVerdict(params.id)
@@ -84,12 +94,30 @@ function matchRoute(path) {
 }
 
 function navigate(path, replace = false) {
+  const currentPath = window.location.pathname;
+  if (!replace && currentPath !== path) {
+    navHistory.push(currentPath);
+  }
   if (replace) {
     window.history.replaceState({ path }, '', path);
   } else {
     window.history.pushState({ path }, '', path);
   }
   handleRoute(path);
+}
+
+function goBack() {
+  if (navHistory.length > 0) {
+    const prevPath = navHistory.pop();
+    window.history.back();
+  } else {
+    navigate('/');
+  }
+}
+
+function goHome() {
+  navHistory.length = 0;
+  navigate('/');
 }
 
 function handleRoute(path) {
@@ -126,6 +154,13 @@ async function navigateToCases() {
 }
 
 async function navigateToCase(caseId) {
+  // Check if it's a custom case
+  if (caseId === 'custom' && state.customCase) {
+    state.selectedDilemma = state.customCase;
+    showSideSelection();
+    return;
+  }
+
   if (state.dilemmas.length === 0) {
     await loadDilemmas();
   }
@@ -138,6 +173,26 @@ async function navigateToCase(caseId) {
 
   state.selectedDilemma = dilemma;
   showSideSelection();
+}
+
+function navigateToCustomCase() {
+  clearCustomCaseForm();
+  showScreen('customCase');
+}
+
+function navigateToAiCase() {
+  document.getElementById('ai-case-topic').value = '';
+  document.getElementById('generated-case-preview').classList.add('hidden');
+  state.generatedCase = null;
+  showScreen('aiCase');
+}
+
+function clearCustomCaseForm() {
+  document.getElementById('custom-title').value = '';
+  document.getElementById('custom-description').value = '';
+  document.getElementById('custom-context').value = '';
+  document.getElementById('custom-prosecution').value = '';
+  document.getElementById('custom-defense').value = '';
 }
 
 async function navigateToDebate(debateId) {
@@ -397,6 +452,116 @@ document.getElementById('play-again').addEventListener('click', () => {
 
 document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
+// Navigation buttons
+document.getElementById('nav-back').addEventListener('click', goBack);
+document.getElementById('nav-home').addEventListener('click', goHome);
+document.getElementById('header-home').addEventListener('click', goHome);
+
+// Custom case buttons
+document.getElementById('create-custom-case').addEventListener('click', () => navigate('/cases/new'));
+document.getElementById('generate-ai-case').addEventListener('click', () => navigate('/cases/generate'));
+document.getElementById('cancel-custom-case').addEventListener('click', () => navigate('/cases'));
+document.getElementById('save-custom-case').addEventListener('click', saveCustomCase);
+
+// AI case generator buttons
+document.getElementById('generate-case-btn').addEventListener('click', generateAiCase);
+document.getElementById('regenerate-case').addEventListener('click', generateAiCase);
+document.getElementById('use-generated-case').addEventListener('click', useGeneratedCase);
+
+// Complexity selection
+document.querySelectorAll('.complexity-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.complexity-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.selectedComplexity = btn.dataset.complexity;
+  });
+});
+
+function saveCustomCase() {
+  const title = document.getElementById('custom-title').value.trim();
+  const description = document.getElementById('custom-description').value.trim();
+  const context = document.getElementById('custom-context').value.trim();
+  const prosecution = document.getElementById('custom-prosecution').value.trim();
+  const defense = document.getElementById('custom-defense').value.trim();
+
+  if (!title || !description || !prosecution || !defense) {
+    alert('Please fill in the case title, description, and both positions.');
+    return;
+  }
+
+  state.customCase = {
+    id: 'custom',
+    title: title,
+    description: description,
+    context: context || 'Custom case created by user.',
+    positions: {
+      prosecution: prosecution,
+      defense: defense
+    }
+  };
+
+  navigate('/case/custom');
+}
+
+async function generateAiCase() {
+  const topic = document.getElementById('ai-case-topic').value.trim();
+
+  if (!topic) {
+    alert('Please describe the type of case you want to generate.');
+    return;
+  }
+
+  const btn = document.getElementById('generate-case-btn');
+  const preview = document.getElementById('generated-case-preview');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  preview.classList.add('hidden');
+
+  try {
+    const response = await fetch('/api/cases/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: topic,
+        complexity: state.selectedComplexity
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    state.generatedCase = data;
+
+    document.getElementById('gen-case-title').textContent = data.title;
+    document.getElementById('gen-case-description').textContent = data.description;
+    document.getElementById('gen-case-prosecution').textContent = data.positions.prosecution;
+    document.getElementById('gen-case-defense').textContent = data.positions.defense;
+
+    preview.classList.remove('hidden');
+
+  } catch (error) {
+    console.error('Failed to generate case:', error);
+    alert('Failed to generate case: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Case';
+  }
+}
+
+function useGeneratedCase() {
+  if (!state.generatedCase) return;
+
+  state.customCase = {
+    id: 'custom',
+    ...state.generatedCase
+  };
+
+  navigate('/case/custom');
+}
+
 // AI Assist mode toggle
 document.getElementById('mode-manual').addEventListener('click', () => switchInputMode('manual'));
 document.getElementById('mode-assist').addEventListener('click', () => switchInputMode('assist'));
@@ -622,6 +787,16 @@ async function startDebate() {
       playerSide: state.selectedSide,
       difficulty: state.selectedDifficulty
     };
+
+    // If this is a custom case, send the full case data
+    if (state.selectedDilemma.id === 'custom') {
+      payload.customCase = {
+        title: state.selectedDilemma.title,
+        description: state.selectedDilemma.description,
+        context: state.selectedDilemma.context,
+        positions: state.selectedDilemma.positions
+      };
+    }
 
     if (state.selectedModel) {
       payload.model = state.selectedModel;

@@ -16,11 +16,12 @@ const db = new Database(DB_PATH);
 db.exec(`
   CREATE TABLE IF NOT EXISTS debates (
     id TEXT PRIMARY KEY,
-    dilemma_id INTEGER NOT NULL,
+    dilemma_id TEXT NOT NULL,
     dilemma_title TEXT NOT NULL,
     player_side TEXT NOT NULL,
     ai_side TEXT NOT NULL,
     status TEXT DEFAULT 'active',
+    custom_case_data TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME
   );
@@ -54,19 +55,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_turns_debate ON turns(debate_id);
 `);
 
+// Migration: Add custom_case_data column if it doesn't exist
+try {
+  db.exec(`ALTER TABLE debates ADD COLUMN custom_case_data TEXT`);
+} catch (e) {
+  // Column already exists, ignore error
+}
+
 // Generate a hard-to-guess ID (21 chars by default, URL-safe)
 export function generateDebateId() {
   return nanoid(21);
 }
 
 // Create a new debate
-export function createDebate(dilemmaId, dilemmaTitle, playerSide, aiSide) {
+export function createDebate(dilemmaId, dilemmaTitle, playerSide, aiSide, customCaseData = null) {
   const id = generateDebateId();
   const stmt = db.prepare(`
-    INSERT INTO debates (id, dilemma_id, dilemma_title, player_side, ai_side)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO debates (id, dilemma_id, dilemma_title, player_side, ai_side, custom_case_data)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(id, dilemmaId, dilemmaTitle, playerSide, aiSide);
+  stmt.run(id, dilemmaId, dilemmaTitle, playerSide, aiSide, customCaseData ? JSON.stringify(customCaseData) : null);
   return id;
 }
 
@@ -149,8 +157,19 @@ export function getFullDebate(id) {
   const turns = getTurns(id);
   const verdict = getVerdict(id);
 
+  // Parse custom case data if present
+  let customCaseData = null;
+  if (debate.custom_case_data) {
+    try {
+      customCaseData = JSON.parse(debate.custom_case_data);
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
   return {
     ...debate,
+    customCaseData,
     turns: turns.map(t => ({
       turn: t.turn_number,
       player: t.player_argument,
