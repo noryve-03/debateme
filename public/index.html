@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Argue Against the Machine</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -28,20 +29,27 @@
 
     <!-- Screen: Welcome -->
     <section id="welcome-screen" class="screen active">
-      <div class="welcome-content">
-        <div class="logo-icon">&#9878;</div>
-        <h2>Welcome to the Courtroom</h2>
-        <p>Test your legal argumentation skills against an AI opponent. An impartial AI judge will evaluate your debate and provide feedback to sharpen your "thinking like a lawyer" abilities.</p>
-        <div class="rules">
-          <h3>How It Works</h3>
-          <ol>
-            <li>Choose a legal dilemma</li>
-            <li>Pick your side: Prosecution or Defense</li>
-            <li>Argue your case over 3 rounds</li>
-            <li>Receive a verdict and detailed feedback</li>
-          </ol>
+      <div class="welcome-hero">
+        <div class="hero-icon">
+          <span class="icon-scales">&#9878;</span>
         </div>
-        <button id="start-btn" class="btn btn-primary">Select a Case</button>
+
+        <h2 class="hero-title">
+          <span class="title-word">Human</span>
+          <span class="title-vs">vs</span>
+          <span class="title-word">Machine</span>
+        </h2>
+
+        <p class="hero-subtitle">Master legal argumentation by debating AI opponents</p>
+
+        <div class="steps-row">
+          <div class="step"><span>01</span> Choose case</div>
+          <div class="step"><span>02</span> Pick side</div>
+          <div class="step"><span>03</span> Debate</div>
+          <div class="step"><span>04</span> Get verdict</div>
+        </div>
+
+        <button id="start-btn" class="btn btn-primary btn-hero">Enter the Courtroom</button>
       </div>
     </section>
 
