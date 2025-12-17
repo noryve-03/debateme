@@ -115,7 +115,52 @@
       </div>
 
       <div id="input-area" class="input-area">
-        <textarea id="argument-input" placeholder="Type your argument here... Be persuasive, cite legal principles, and anticipate counterarguments." rows="4"></textarea>
+        <div class="input-mode-toggle">
+          <button class="mode-btn active" data-mode="manual" id="mode-manual">Write Myself</button>
+          <button class="mode-btn" data-mode="assist" id="mode-assist">AI Assist</button>
+        </div>
+        <div id="manual-mode" class="input-mode">
+          <textarea id="argument-input" placeholder="Type your argument here... Be persuasive, cite legal principles, and anticipate counterarguments." rows="4"></textarea>
+        </div>
+        <div id="assist-mode" class="input-mode hidden">
+          <div class="assist-header">
+            <div class="assist-options">
+              <button class="assist-btn" id="generate-scratch">Generate from Scratch</button>
+              <span class="assist-or">or</span>
+            </div>
+            <button class="btn-small" id="toggle-assist-settings">Settings</button>
+          </div>
+          <div id="assist-settings" class="assist-settings hidden">
+            <div class="assist-setting-row">
+              <label>Model:</label>
+              <select id="assist-model">
+                <!-- Populated by JS -->
+              </select>
+            </div>
+            <div class="assist-setting-row">
+              <label>Style:</label>
+              <select id="assist-style">
+                <option value="balanced">Balanced</option>
+                <option value="aggressive">Aggressive</option>
+                <option value="philosophical">Philosophical</option>
+                <option value="precedent-heavy">Precedent-Heavy</option>
+              </select>
+            </div>
+          </div>
+          <textarea id="assist-prompt" placeholder="Describe your argument idea and AI will expand it... (e.g., 'Focus on the necessity defense and mention the Dudley case')" rows="3"></textarea>
+          <button class="btn btn-secondary assist-expand-btn" id="expand-prompt">Expand My Idea</button>
+          <div id="generated-preview" class="generated-preview hidden">
+            <div class="preview-header">
+              <span>Generated Argument</span>
+              <button class="btn-small" id="regenerate">Regenerate</button>
+            </div>
+            <div id="preview-content" class="preview-content"></div>
+            <div class="preview-actions">
+              <button class="btn btn-secondary" id="edit-generated">Edit</button>
+              <button class="btn btn-primary" id="use-generated">Use This</button>
+            </div>
+          </div>
+        </div>
         <div class="input-actions">
           <span id="char-count" class="char-count">0 / 1000</span>
           <button id="submit-argument" class="btn btn-primary">Submit Argument</button>

@@ -35,7 +35,10 @@ const state = {
   selectedDifficulty: 'associate',
   selectedModel: null,
   advancedOpen: false,
-  loadedDebate: null // Cache for loaded debate data
+  loadedDebate: null, // Cache for loaded debate data
+  inputMode: 'manual', // 'manual' or 'assist'
+  generatedArgument: null,
+  lastAssistMode: null // 'scratch' or 'expand'
 };
 
 // DOM Elements
@@ -348,9 +351,18 @@ async function loadConfig() {
     const response = await fetch('/api/config');
     state.config = await response.json();
     state.selectedDifficulty = state.config.defaults.difficulty;
+    populateAssistModelDropdown();
   } catch (error) {
     console.error('Failed to load config:', error);
   }
+}
+
+function populateAssistModelDropdown() {
+  if (!state.config) return;
+  const select = document.getElementById('assist-model');
+  select.innerHTML = state.config.models.map(m =>
+    `<option value="${m.id}" ${m.id === 'llama-3.3-70b-versatile' ? 'selected' : ''}>${m.name}</option>`
+  ).join('');
 }
 
 async function loadDilemmas() {
@@ -384,6 +396,111 @@ document.getElementById('play-again').addEventListener('click', () => {
 });
 
 document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+
+// AI Assist mode toggle
+document.getElementById('mode-manual').addEventListener('click', () => switchInputMode('manual'));
+document.getElementById('mode-assist').addEventListener('click', () => switchInputMode('assist'));
+
+// AI Assist actions
+document.getElementById('generate-scratch').addEventListener('click', () => generateAssist('scratch'));
+document.getElementById('expand-prompt').addEventListener('click', () => generateAssist('expand'));
+document.getElementById('regenerate').addEventListener('click', () => generateAssist(state.lastAssistMode));
+document.getElementById('edit-generated').addEventListener('click', editGenerated);
+document.getElementById('use-generated').addEventListener('click', useGenerated);
+
+// AI Assist settings toggle
+document.getElementById('toggle-assist-settings').addEventListener('click', () => {
+  const settings = document.getElementById('assist-settings');
+  settings.classList.toggle('hidden');
+});
+
+function switchInputMode(mode) {
+  state.inputMode = mode;
+
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(`mode-${mode}`).classList.add('active');
+
+  document.getElementById('manual-mode').classList.toggle('hidden', mode !== 'manual');
+  document.getElementById('assist-mode').classList.toggle('hidden', mode !== 'assist');
+
+  // Reset preview when switching modes
+  document.getElementById('generated-preview').classList.add('hidden');
+  state.generatedArgument = null;
+}
+
+async function generateAssist(mode) {
+  const prompt = document.getElementById('assist-prompt').value.trim();
+  const selectedModel = document.getElementById('assist-model').value;
+  const selectedStyle = document.getElementById('assist-style').value;
+
+  if (mode === 'expand' && !prompt) {
+    alert('Please describe your argument idea first.');
+    return;
+  }
+
+  state.lastAssistMode = mode;
+
+  // Show loading state
+  const previewEl = document.getElementById('generated-preview');
+  const contentEl = document.getElementById('preview-content');
+  previewEl.classList.remove('hidden');
+  contentEl.innerHTML = '<div class="assist-loading"><div class="spinner"></div><span>Generating argument...</span></div>';
+
+  // Disable buttons during generation
+  document.getElementById('generate-scratch').disabled = true;
+  document.getElementById('expand-prompt').disabled = true;
+
+  try {
+    const response = await fetch('/api/debate/assist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        prompt: prompt,
+        mode: mode,
+        model: selectedModel,
+        style: selectedStyle
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    state.generatedArgument = data.argument;
+    contentEl.textContent = data.argument;
+
+  } catch (error) {
+    console.error('AI assist error:', error);
+    contentEl.innerHTML = `<span style="color: var(--red);">Error: ${error.message}</span>`;
+    state.generatedArgument = null;
+  } finally {
+    document.getElementById('generate-scratch').disabled = false;
+    document.getElementById('expand-prompt').disabled = false;
+  }
+}
+
+function editGenerated() {
+  if (!state.generatedArgument) return;
+
+  // Switch to manual mode with the generated text
+  switchInputMode('manual');
+  document.getElementById('argument-input').value = state.generatedArgument;
+  document.getElementById('char-count').textContent = `${state.generatedArgument.length} / 1000`;
+}
+
+function useGenerated() {
+  if (!state.generatedArgument) return;
+
+  // Put the generated argument in the main input and submit
+  document.getElementById('argument-input').value = state.generatedArgument;
+  document.getElementById('char-count').textContent = `${state.generatedArgument.length} / 1000`;
+
+  // Switch to manual mode visually but keep the text
+  switchInputMode('manual');
+}
 
 // ===================
 // UI RENDERING
@@ -563,6 +680,12 @@ function setupDebateScreen() {
   document.getElementById('char-count').textContent = '0 / 1000';
   document.getElementById('request-verdict').classList.add('hidden');
   document.getElementById('input-area').classList.remove('hidden');
+
+  // Reset AI assist state
+  switchInputMode('manual');
+  document.getElementById('assist-prompt').value = '';
+  document.getElementById('generated-preview').classList.add('hidden');
+  state.generatedArgument = null;
 
   showScreen('debate');
 }

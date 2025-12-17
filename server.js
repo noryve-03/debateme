@@ -469,6 +469,199 @@ app.get('/case/:id', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
+// Argument style configurations
+const ARGUMENT_STYLES = {
+  balanced: {
+    name: 'Balanced',
+    instruction: 'Present a well-rounded argument that balances logical reasoning with emotional appeal. Use clear structure and acknowledge complexity while maintaining your position firmly.'
+  },
+  aggressive: {
+    name: 'Aggressive',
+    instruction: 'Take an assertive, confident stance. Challenge opposing arguments directly and forcefully. Use strong language and rhetorical techniques to dominate the debate. Be relentless in pointing out flaws in the opposition.'
+  },
+  philosophical: {
+    name: 'Philosophical',
+    instruction: 'Ground your argument in deeper philosophical and ethical frameworks. Reference moral philosophy, jurisprudence theory, and fundamental principles of justice. Explore the broader implications and underlying values at stake.'
+  },
+  'precedent-heavy': {
+    name: 'Precedent-Heavy',
+    instruction: 'Focus heavily on legal precedent and case law. Reference specific cases by name (real or plausible), cite established legal doctrines, and build your argument on the foundation of how similar cases have been decided.'
+  }
+};
+
+// API: Generate AI-assisted argument for the player
+app.post('/api/debate/assist', async (req, res) => {
+  const { sessionId, prompt, mode, model, style } = req.body;
+
+  let session = sessionCache.get(sessionId);
+
+  if (!session) {
+    const dbDebate = db.getDebate(sessionId);
+    if (!dbDebate || dbDebate.status !== 'active') {
+      return res.status(400).json({ error: 'Invalid or expired session' });
+    }
+
+    const dilemma = DILEMMAS.find(d => d.id == dbDebate.dilemma_id);
+    if (!dilemma) {
+      return res.status(400).json({ error: 'Dilemma not found' });
+    }
+    const turns = db.getTurns(sessionId);
+
+    session = {
+      id: sessionId,
+      dilemma,
+      playerSide: dbDebate.player_side,
+      aiSide: dbDebate.ai_side,
+      turns: turns.map(t => ({ turn: t.turn_number, player: t.player_argument, ai: t.ai_response })),
+      maxTurns: 3,
+      currentTurn: turns.length,
+      status: 'active',
+      difficulty: DIFFICULTIES.associate,
+      model: 'llama-3.3-70b-versatile'
+    };
+    sessionCache.set(sessionId, session);
+  }
+
+  try {
+    const selectedModel = model && MODELS[model] ? model : 'llama-3.3-70b-versatile';
+    const selectedStyle = style && ARGUMENT_STYLES[style] ? style : 'balanced';
+    const generatedArgument = await generatePlayerAssist(session, prompt, mode, selectedModel, selectedStyle);
+    res.json({ argument: generatedArgument });
+  } catch (error) {
+    console.error('AI assist error:', error);
+    res.status(500).json({ error: 'Failed to generate argument' });
+  }
+});
+
+// Generate AI-assisted argument for the player
+async function generatePlayerAssist(session, userPrompt, mode, model, style) {
+  const styleConfig = ARGUMENT_STYLES[style] || ARGUMENT_STYLES.balanced;
+
+  // Build comprehensive turn history with context
+  const turnHistory = session.turns
+    .map((t, i) => `=== ROUND ${i + 1} ===\n[YOUR PREVIOUS ARGUMENT - ${session.playerSide.toUpperCase()}]:\n${t.player}\n\n[OPPONENT'S RESPONSE - ${session.aiSide.toUpperCase()}]:\n${t.ai}`)
+    .join('\n\n');
+
+  const lastAiArgument = session.turns.length > 0
+    ? session.turns[session.turns.length - 1].ai
+    : null;
+
+  const turnNumber = session.turns.length + 1;
+  const isOpening = session.turns.length === 0;
+  const isFinal = turnNumber === 3;
+
+  // Build context about what opponent has argued
+  let opponentAnalysis = '';
+  if (session.turns.length > 0) {
+    const opponentPoints = session.turns.map((t, i) => `Round ${i + 1}: ${t.ai.substring(0, 150)}...`).join('\n');
+    opponentAnalysis = `
+OPPONENT'S KEY ARGUMENTS SO FAR:
+${opponentPoints}
+
+You MUST directly address and counter the opponent's most recent points. Do not ignore what they said.`;
+  }
+
+  let promptText;
+
+  if (mode === 'scratch') {
+    promptText = `You are an expert legal advocate with decades of courtroom experience. You are arguing the ${session.playerSide.toUpperCase()} position in a formal legal debate.
+
+====== CASE INFORMATION ======
+CASE NAME: "${session.dilemma.title}"
+
+FACTS OF THE CASE:
+${session.dilemma.description}
+
+YOUR ASSIGNED POSITION (${session.playerSide.toUpperCase()}):
+${session.dilemma.positions[session.playerSide]}
+
+OPPOSING POSITION (${session.aiSide.toUpperCase()}):
+${session.dilemma.positions[session.aiSide]}
+
+RELEVANT LEGAL CONTEXT:
+${session.dilemma.context}
+
+====== DEBATE HISTORY ======
+${turnHistory || 'This is the opening round. No previous arguments have been made.'}
+${opponentAnalysis}
+
+====== YOUR TASK ======
+This is ROUND ${turnNumber} of 3. ${isOpening ? 'This is your OPENING ARGUMENT.' : isFinal ? 'This is your CLOSING ARGUMENT - make it powerful and memorable.' : 'Continue building your case and rebut the opposition.'}
+
+STYLE INSTRUCTION: ${styleConfig.instruction}
+
+${lastAiArgument ? `YOUR OPPONENT JUST ARGUED:\n"${lastAiArgument}"\n\nYou MUST directly respond to their specific points before advancing your own arguments.` : ''}
+
+REQUIREMENTS:
+1. Stay STRICTLY in character as ${session.playerSide} - never argue for the other side
+2. ${!isOpening ? 'DIRECTLY ADDRESS the opponent\'s most recent arguments point-by-point' : 'Establish your core thesis and key arguments'}
+3. Use specific legal principles, doctrines, or precedents to support your position
+4. Be persuasive and rhetorically powerful
+5. Keep your argument between 150-200 words
+6. Write ONLY the argument itself - no meta-commentary or explanations
+
+Generate your ${session.playerSide} argument now:`;
+  } else {
+    promptText = `You are an expert legal advocate with decades of courtroom experience. You are helping articulate an argument for the ${session.playerSide.toUpperCase()} position.
+
+====== CASE INFORMATION ======
+CASE NAME: "${session.dilemma.title}"
+
+FACTS OF THE CASE:
+${session.dilemma.description}
+
+YOUR ASSIGNED POSITION (${session.playerSide.toUpperCase()}):
+${session.dilemma.positions[session.playerSide]}
+
+OPPOSING POSITION (${session.aiSide.toUpperCase()}):
+${session.dilemma.positions[session.aiSide]}
+
+RELEVANT LEGAL CONTEXT:
+${session.dilemma.context}
+
+====== DEBATE HISTORY ======
+${turnHistory || 'This is the opening round. No previous arguments have been made.'}
+${opponentAnalysis}
+
+====== USER'S IDEA ======
+The user wants to make this point but needs help articulating it as a legal argument:
+"${userPrompt}"
+
+====== YOUR TASK ======
+This is ROUND ${turnNumber} of 3. ${isOpening ? 'This is the OPENING ARGUMENT.' : isFinal ? 'This is the CLOSING ARGUMENT.' : 'Continue the debate.'}
+
+STYLE INSTRUCTION: ${styleConfig.instruction}
+
+${lastAiArgument ? `OPPONENT'S LAST ARGUMENT:\n"${lastAiArgument}"\n\nIncorporate a response to this while developing the user's idea.` : ''}
+
+REQUIREMENTS:
+1. Transform the user's idea into a polished, professional legal argument
+2. Stay STRICTLY faithful to the ${session.playerSide} position
+3. Preserve the user's core concept but enhance it with legal reasoning
+4. ${!isOpening ? 'Weave in responses to the opponent\'s arguments' : 'Use this to establish a strong opening position'}
+5. Add relevant legal principles, precedents, or doctrines
+6. Keep between 150-200 words
+7. Write ONLY the argument itself - no meta-commentary
+
+Generate the enhanced argument now:`;
+  }
+
+  const completion = await groq.chat.completions.create({
+    messages: [
+      {
+        role: 'system',
+        content: `You are a world-class legal debater and advocate. You ONLY argue for the ${session.playerSide} position. You never break character or argue for the opposing side. You always directly engage with and rebut opponent arguments. Your responses are the argument itself with no preamble or explanation.`
+      },
+      { role: 'user', content: promptText }
+    ],
+    model: model,
+    temperature: 0.75,
+    max_tokens: 500
+  });
+
+  return completion.choices[0]?.message?.content || 'Failed to generate argument.';
+}
+
 // Generate AI opponent response
 async function generateAIResponse(session, playerArgument) {
   const difficulty = session.difficulty || DIFFICULTIES.associate;

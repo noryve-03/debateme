@@ -1194,6 +1194,245 @@ header h1 {
   display: none !important;
 }
 
+/* AI ASSIST MODE */
+.input-mode-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border: 1px solid var(--gray-dark);
+}
+
+.mode-btn {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray);
+  transition: all 0.1s ease;
+}
+
+.mode-btn:first-child {
+  border-right: 1px solid var(--gray-dark);
+}
+
+.mode-btn:hover {
+  color: var(--fg);
+  background: var(--card-bg);
+}
+
+.mode-btn.active {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.input-mode {
+  display: block;
+}
+
+.input-mode.hidden {
+  display: none;
+}
+
+.assist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.assist-options {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.assist-settings {
+  border: 1px solid var(--gray-dark);
+  padding: 15px;
+  margin-bottom: 15px;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.assist-settings.hidden {
+  display: none;
+}
+
+.assist-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assist-setting-row label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gray);
+}
+
+.assist-setting-row select {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--gray-dark);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.assist-setting-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.assist-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 14px 24px;
+  background: var(--accent);
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  transition: all 0.1s ease;
+}
+
+.assist-btn:hover {
+  background: var(--accent-dim);
+}
+
+.assist-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.assist-or {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+#assist-prompt {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--gray-dark);
+  padding: 15px;
+  color: var(--fg);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+#assist-prompt:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#assist-prompt::placeholder {
+  color: var(--gray);
+}
+
+.assist-expand-btn {
+  margin-bottom: 15px;
+}
+
+.generated-preview {
+  border: 1px solid var(--accent);
+  padding: 20px;
+  margin-top: 15px;
+  background: var(--card-bg);
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.preview-header span {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.btn-small {
+  font-family: 'IBM Plex Mono', monospace;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--gray);
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray);
+  transition: all 0.1s ease;
+}
+
+.btn-small:hover {
+  border-color: var(--fg);
+  color: var(--fg);
+}
+
+.preview-content {
+  color: var(--fg);
+  line-height: 1.7;
+  font-size: 0.95rem;
+  padding: 15px;
+  background: var(--input-bg);
+  border: 1px solid var(--gray-dark);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  justify-content: flex-end;
+}
+
+.preview-actions .btn {
+  padding: 10px 20px;
+  font-size: 0.75rem;
+}
+
+.assist-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  color: var(--gray);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.assist-loading .spinner {
+  width: 16px;
+  height: 16px;
+}
+
 /* THEME TOGGLE */
 .theme-toggle {
   position: absolute;
