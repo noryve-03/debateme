@@ -24,6 +24,100 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
+// Available models configuration
+const MODELS = {
+  'llama-3.3-70b-versatile': {
+    id: 'llama-3.3-70b-versatile',
+    name: 'Llama 3.3 70B',
+    description: 'Best quality, slower',
+    speed: '280 T/sec'
+  },
+  'llama-3.1-8b-instant': {
+    id: 'llama-3.1-8b-instant',
+    name: 'Llama 3.1 8B',
+    description: 'Fast responses, lighter',
+    speed: '560 T/sec'
+  },
+  'llama3-70b-8192': {
+    id: 'llama3-70b-8192',
+    name: 'Llama 3 70B',
+    description: 'Legacy model, reliable',
+    speed: '330 T/sec'
+  },
+  'mixtral-8x7b-32768': {
+    id: 'mixtral-8x7b-32768',
+    name: 'Mixtral 8x7B',
+    description: 'Good for complex reasoning',
+    speed: '480 T/sec'
+  },
+  'gemma2-9b-it': {
+    id: 'gemma2-9b-it',
+    name: 'Gemma 2 9B',
+    description: 'Google model, balanced',
+    speed: '440 T/sec'
+  }
+};
+
+// Difficulty configurations
+const DIFFICULTIES = {
+  law_student: {
+    id: 'law_student',
+    name: 'Law Student',
+    description: 'Learning the ropes - makes occasional weak arguments',
+    model: 'llama-3.1-8b-instant',
+    temperature: 0.8,
+    aggressiveness: 'gentle',
+    promptModifier: `You are a first-year law student practicing debate. While you try to make good arguments, you sometimes:
+- Miss obvious counterpoints
+- Make arguments that are emotionally compelling but legally weak
+- Occasionally concede good points your opponent makes
+- Use simpler legal language
+Keep responses under 150 words. Be earnest but not overly sophisticated.`
+  },
+  associate: {
+    id: 'associate',
+    name: 'Associate',
+    description: 'Competent opponent - solid arguments, some gaps',
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.7,
+    aggressiveness: 'moderate',
+    promptModifier: `You are a junior associate at a law firm with 2-3 years experience. You make solid arguments and know the basics well, but:
+- Sometimes miss nuanced counterarguments
+- Occasionally over-rely on one line of reasoning
+- May not always anticipate every weakness in your position
+Keep responses under 180 words. Be professional and competent.`
+  },
+  partner: {
+    id: 'partner',
+    name: 'Senior Partner',
+    description: 'Aggressive litigator - finds every weakness',
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.6,
+    aggressiveness: 'aggressive',
+    promptModifier: `You are a senior litigation partner with 20+ years of trial experience. You are known for:
+- Ruthlessly identifying weaknesses in opposing arguments
+- Never conceding any point, always finding a counter
+- Using rhetorical techniques to undermine opponent credibility
+- Anticipating and preemptively addressing counterarguments
+Keep responses under 200 words. Be aggressive but professional - like a real courtroom shark.`
+  },
+  supreme_court: {
+    id: 'supreme_court',
+    name: 'Supreme Court',
+    description: 'Elite advocate - cites precedents, philosophical depth',
+    model: 'llama-3.3-70b-versatile',
+    temperature: 0.5,
+    aggressiveness: 'masterful',
+    promptModifier: `You are a Supreme Court advocate who has argued dozens of cases before the highest courts. You are known for:
+- Citing relevant case law and legal precedents by name (e.g., "As established in Dudley and Stephens...")
+- Weaving philosophical and jurisprudential frameworks into arguments
+- Anticipating not just immediate counterarguments but second and third-order implications
+- Using precise legal terminology and impeccable logical structure
+- Never making an argument that couldn't withstand strict scrutiny
+Keep responses under 220 words. Demonstrate mastery of legal reasoning at the highest level.`
+  }
+};
+
 // Legal dilemmas database
 const DILEMMAS = [
   {
@@ -111,6 +205,23 @@ const DILEMMAS = [
 // In-memory cache for active sessions (backed by SQLite)
 const sessionCache = new Map();
 
+// API: Get configuration options
+app.get('/api/config', (req, res) => {
+  res.json({
+    models: Object.values(MODELS),
+    difficulties: Object.values(DIFFICULTIES).map(d => ({
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      defaultModel: d.model
+    })),
+    defaults: {
+      difficulty: 'associate',
+      model: 'llama-3.3-70b-versatile'
+    }
+  });
+});
+
 // API: Get all dilemmas
 app.get('/api/dilemmas', (req, res) => {
   const simplified = DILEMMAS.map(d => ({
@@ -123,12 +234,15 @@ app.get('/api/dilemmas', (req, res) => {
 
 // API: Start a new debate
 app.post('/api/debate/start', (req, res) => {
-  const { dilemmaId, playerSide } = req.body;
+  const { dilemmaId, playerSide, difficulty = 'associate', model } = req.body;
 
   const dilemma = DILEMMAS.find(d => d.id === dilemmaId);
   if (!dilemma) {
     return res.status(400).json({ error: 'Invalid dilemma ID' });
   }
+
+  const difficultyConfig = DIFFICULTIES[difficulty] || DIFFICULTIES.associate;
+  const selectedModel = model && MODELS[model] ? model : difficultyConfig.model;
 
   const aiSide = playerSide === 'prosecution' ? 'defense' : 'prosecution';
 
@@ -143,7 +257,9 @@ app.post('/api/debate/start', (req, res) => {
     turns: [],
     maxTurns: 3,
     currentTurn: 0,
-    status: 'active'
+    status: 'active',
+    difficulty: difficultyConfig,
+    model: selectedModel
   };
 
   sessionCache.set(sessionId, session);
@@ -159,7 +275,9 @@ app.post('/api/debate/start', (req, res) => {
     aiSide,
     playerPosition: dilemma.positions[playerSide],
     aiPosition: dilemma.positions[aiSide],
-    maxTurns: session.maxTurns
+    maxTurns: session.maxTurns,
+    difficulty: difficultyConfig.name,
+    model: MODELS[selectedModel]?.name || selectedModel
   });
 });
 
@@ -187,7 +305,9 @@ app.post('/api/debate/argue', async (req, res) => {
       turns: turns.map(t => ({ turn: t.turn_number, player: t.player_argument, ai: t.ai_response })),
       maxTurns: 3,
       currentTurn: turns.length,
-      status: 'active'
+      status: 'active',
+      difficulty: DIFFICULTIES.associate, // Default for restored sessions
+      model: 'llama-3.3-70b-versatile'
     };
     sessionCache.set(sessionId, session);
   }
@@ -228,7 +348,7 @@ app.post('/api/debate/argue', async (req, res) => {
   } catch (error) {
     console.error('AI response error:', error);
     session.currentTurn--; // Rollback on error
-    res.status(500).json({ error: 'Failed to generate AI response' });
+    res.status(500).json({ error: 'Failed to generate AI response: ' + (error.message || 'Unknown error') });
   }
 });
 
@@ -261,7 +381,8 @@ app.post('/api/debate/judge', async (req, res) => {
       turns: turns.map(t => ({ turn: t.turn_number, player: t.player_argument, ai: t.ai_response })),
       maxTurns: 3,
       currentTurn: turns.length,
-      status: dbDebate.status
+      status: dbDebate.status,
+      model: 'llama-3.3-70b-versatile'
     };
   }
 
@@ -321,12 +442,17 @@ app.get('/debate/:id', (req, res) => {
 
 // Generate AI opponent response
 async function generateAIResponse(session, playerArgument) {
+  const difficulty = session.difficulty || DIFFICULTIES.associate;
+  const model = session.model || difficulty.model;
+
   const turnHistory = session.turns
     .filter(t => t.ai)
     .map(t => `Human (${session.playerSide}): ${t.player}\nAI (${session.aiSide}): ${t.ai}`)
     .join('\n\n');
 
-  const prompt = `You are an expert legal debater arguing the ${session.aiSide} position in a debate about "${session.dilemma.title}".
+  const prompt = `${difficulty.promptModifier}
+
+You are arguing the ${session.aiSide} position in a debate about "${session.dilemma.title}".
 
 CASE BACKGROUND:
 ${session.dilemma.description}
@@ -342,13 +468,13 @@ ${turnHistory ? `PREVIOUS EXCHANGES:\n${turnHistory}\n\n` : ''}
 YOUR OPPONENT JUST ARGUED (${session.playerSide}):
 "${playerArgument}"
 
-Respond with a strong counter-argument for the ${session.aiSide}. Be persuasive, cite relevant legal principles, anticipate their counter-arguments, and point out weaknesses in their reasoning. Keep your response focused and under 200 words. Do not be sycophantic or acknowledge good points - argue aggressively but professionally like a real courtroom lawyer.`;
+Respond with a counter-argument for the ${session.aiSide}. Stay in character for your skill level.`;
 
   const completion = await groq.chat.completions.create({
     messages: [{ role: 'user', content: prompt }],
-    model: 'llama-3.3-70b-versatile',
-    temperature: 0.7,
-    max_tokens: 400
+    model: model,
+    temperature: difficulty.temperature,
+    max_tokens: 500
   });
 
   return completion.choices[0]?.message?.content || 'The AI opponent could not formulate a response.';
@@ -356,6 +482,8 @@ Respond with a strong counter-argument for the ${session.aiSide}. Be persuasive,
 
 // Generate judge's verdict
 async function generateJudgeVerdict(session) {
+  const model = session.model || 'llama-3.3-70b-versatile';
+
   const debateTranscript = session.turns
     .map(t => `--- Turn ${t.turn} ---\nHuman (${session.playerSide}): ${t.player}\nAI (${session.aiSide}): ${t.ai}`)
     .join('\n\n');
@@ -406,7 +534,7 @@ Respond in this exact JSON format:
 
   const completion = await groq.chat.completions.create({
     messages: [{ role: 'user', content: prompt }],
-    model: 'llama-3.3-70b-versatile',
+    model: model,
     temperature: 0.3,
     max_tokens: 800
   });

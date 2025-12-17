@@ -8,7 +8,12 @@ const state = {
   debateInfo: null,
   currentTurn: 0,
   maxTurns: 3,
-  isReplay: false
+  isReplay: false,
+  // New settings state
+  config: null,
+  selectedDifficulty: 'associate',
+  selectedModel: null, // null means use difficulty default
+  advancedOpen: false
 };
 
 // DOM Elements
@@ -25,6 +30,17 @@ function showScreen(screenName) {
   Object.values(screens).forEach(screen => screen.classList.remove('active'));
   screens[screenName].classList.add('active');
   state.currentScreen = screenName;
+}
+
+// Load configuration (models and difficulties)
+async function loadConfig() {
+  try {
+    const response = await fetch('/api/config');
+    state.config = await response.json();
+    state.selectedDifficulty = state.config.defaults.difficulty;
+  } catch (error) {
+    console.error('Failed to load config:', error);
+  }
 }
 
 // Check if we're viewing a saved debate
@@ -119,6 +135,7 @@ function displaySavedDebate(debate) {
 
 // Initialize
 async function init() {
+  await loadConfig();
   const isSavedDebate = await checkForSavedDebate();
   if (!isSavedDebate) {
     showScreen('welcome');
@@ -179,8 +196,86 @@ function showSideSelection() {
     <h3>${state.selectedDilemma.title}</h3>
     <p>${state.selectedDilemma.description}</p>
   `;
+
+  // Render difficulty options
+  renderDifficultyOptions();
+  renderModelOptions();
+
   showScreen('side');
 }
+
+// Render difficulty options
+function renderDifficultyOptions() {
+  if (!state.config) return;
+
+  const container = document.getElementById('difficulty-options');
+  container.innerHTML = state.config.difficulties.map(d => `
+    <div class="difficulty-option ${d.id} ${d.id === state.selectedDifficulty ? 'selected' : ''}" data-id="${d.id}">
+      <div class="diff-name">${d.name}</div>
+      <div class="diff-desc">${d.description}</div>
+    </div>
+  `).join('');
+
+  // Add click handlers
+  container.querySelectorAll('.difficulty-option').forEach(option => {
+    option.addEventListener('click', () => {
+      state.selectedDifficulty = option.dataset.id;
+      state.selectedModel = null; // Reset model override
+      container.querySelectorAll('.difficulty-option').forEach(o => o.classList.remove('selected'));
+      option.classList.add('selected');
+      renderModelOptions(); // Update model highlights
+    });
+  });
+}
+
+// Render model options
+function renderModelOptions() {
+  if (!state.config) return;
+
+  const container = document.getElementById('model-options');
+  const currentDifficulty = state.config.difficulties.find(d => d.id === state.selectedDifficulty);
+  const defaultModel = currentDifficulty?.defaultModel;
+
+  container.innerHTML = state.config.models.map(m => {
+    const isDefault = m.id === defaultModel;
+    const isSelected = state.selectedModel === m.id || (!state.selectedModel && isDefault);
+    return `
+      <div class="model-option ${isSelected ? 'selected' : ''} ${isDefault && !state.selectedModel ? 'default-for-difficulty' : ''}" data-id="${m.id}">
+        <div class="model-name">${m.name}</div>
+        <div class="model-desc">${m.description}</div>
+        <div class="model-speed">${m.speed}</div>
+        ${isDefault ? '<div class="model-desc">(default)</div>' : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Add click handlers
+  container.querySelectorAll('.model-option').forEach(option => {
+    option.addEventListener('click', () => {
+      state.selectedModel = option.dataset.id;
+      container.querySelectorAll('.model-option').forEach(o => {
+        o.classList.remove('selected');
+        o.classList.remove('default-for-difficulty');
+      });
+      option.classList.add('selected');
+    });
+  });
+}
+
+// Advanced settings toggle
+document.getElementById('toggle-advanced').addEventListener('click', () => {
+  const panel = document.getElementById('advanced-settings');
+  const btn = document.getElementById('toggle-advanced');
+  state.advancedOpen = !state.advancedOpen;
+
+  if (state.advancedOpen) {
+    panel.classList.remove('hidden');
+    btn.textContent = 'Hide Advanced Settings';
+  } else {
+    panel.classList.add('hidden');
+    btn.textContent = 'Advanced Settings';
+  }
+});
 
 // Side selection handlers
 document.querySelectorAll('.btn-side').forEach(btn => {
@@ -193,13 +288,21 @@ document.querySelectorAll('.btn-side').forEach(btn => {
 // Start the debate
 async function startDebate() {
   try {
+    const payload = {
+      dilemmaId: state.selectedDilemma.id,
+      playerSide: state.selectedSide,
+      difficulty: state.selectedDifficulty
+    };
+
+    // Only include model if explicitly selected (override)
+    if (state.selectedModel) {
+      payload.model = state.selectedModel;
+    }
+
     const response = await fetch('/api/debate/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dilemmaId: state.selectedDilemma.id,
-        playerSide: state.selectedSide
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
@@ -231,6 +334,10 @@ function setupDebateScreen() {
   // Clear debate log and add context
   const debateLog = document.getElementById('debate-log');
   debateLog.innerHTML = `
+    <div class="debate-info-badge">
+      <span class="info-tag">Difficulty: <span>${state.debateInfo.difficulty}</span></span>
+      <span class="info-tag">Model: <span>${state.debateInfo.model}</span></span>
+    </div>
     <div class="context-box">
       <h4>Case Background</h4>
       <p>${state.debateInfo.dilemma.description}</p>
@@ -323,7 +430,7 @@ async function submitArgument() {
 
   } catch (error) {
     console.error('Failed to submit argument:', error);
-    alert('Failed to submit argument. Please try again.');
+    alert('Failed to submit argument: ' + error.message);
     input.disabled = false;
     document.getElementById('submit-argument').disabled = false;
   } finally {
@@ -454,6 +561,12 @@ function resetGame() {
   state.debateInfo = null;
   state.currentTurn = 0;
   state.isReplay = false;
+  state.selectedModel = null;
+  state.advancedOpen = false;
+
+  // Reset advanced panel
+  document.getElementById('advanced-settings').classList.add('hidden');
+  document.getElementById('toggle-advanced').textContent = 'Advanced Settings';
 }
 
 // Utility functions
